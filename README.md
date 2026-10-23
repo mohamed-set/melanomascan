@@ -62,7 +62,9 @@ Hugging Face Spaces.
 
 ## Ré-entraîner le modèle
 
-Ouvrir [`training/train_melanoscan.ipynb`](training/train_melanoscan.ipynb) sur Kaggle, ajouter les deux
+[![Open in Kaggle](https://kaggle.com/static/images/open-in-kaggle.svg)](https://kaggle.com/kernels/welcome?src=https://github.com/mohamed-set/melanomascan/blob/main/training/train_melanoscan.ipynb)
+
+Ouvrir [`training/train_melanoscan.ipynb`](training/train_melanoscan.ipynb) sur Kaggle (bouton ci-dessus), ajouter les deux
 datasets ci-dessous, activer GPU + Internet, puis « Run All » (~1 h 30 sur un GPU T4).
 Le script source est `training/train_melanoscan.py` ; `training/to_notebook.py` régénère le notebook.
 
