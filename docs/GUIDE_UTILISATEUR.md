@@ -51,7 +51,13 @@ Sans poids, l'application démarre en **mode démo** : l'interface fonctionne ma
 ## 4. Ré-entraîner le modèle sur Kaggle
 
 1. Sur Kaggle : **Create → New Notebook → File → Import Notebook**, choisissez `training/train_melanoscan.ipynb`.
-2. **Add Input** : ajoutez `cdeotte/jpeg-melanoma-384x384` et `cdeotte/jpeg-isic2019-384x384`.
+2. **Add Input** : cherchez et ajoutez un ou plusieurs datasets d'images de peau, par exemple :
+   - « Skin Cancer MNIST: HAM10000 » (10 015 images, ~1 100 mélanomes) ;
+   - « ISIC 2019 » (25 331 images, ~4 500 mélanomes) ;
+   - « Melanoma Skin Cancer Dataset of 10000 Images » (dossiers benign / malignant) ;
+   - la compétition « SIIM-ISIC Melanoma Classification » (onglet Competitions, accepter le règlement).
+   Le notebook détecte le format tout seul et affiche, pour chaque dataset, combien d'images il a reconnues.
+   Un dataset marqué « Ignoré » n'a pas de label exploitable.
 3. **Settings** : Accelerator = GPU T4 x2 (ou P100), Internet = On (compte vérifié par téléphone requis).
 4. Pour un essai rapide, mettez `"debug": True` dans la cellule des paramètres, puis remettez `False`.
 5. **Save Version → Save & Run All**. Comptez environ 1 h 30.

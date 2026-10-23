@@ -38,7 +38,7 @@ AUC test : …  ·  Ancien modèle (EfficientNetB0 100x100) : 83 % d'accuracy, 7
 
 | | Projet de départ | MelanoScan |
 |---|---|---|
-| Données | ~6 000 images ISIC | ~50 000 images ISIC 2019 + 2020 (Kaggle) |
+| Données | ~6 000 images ISIC | un ou plusieurs datasets ISIC Kaggle (HAM10000, ISIC 2019, ISIC 2020…), détectés automatiquement |
 | Modèle | EfficientNetB0, 100x100 | EfficientNetV2-S (ImageNet-21k), 384x384 |
 | Découpage | aléatoire par image | par patient (pas de fuite) |
 | Déséquilibre | non traité | BCE pondérée |
@@ -64,8 +64,8 @@ Hugging Face Spaces.
 
 [![Open in Kaggle](https://kaggle.com/static/images/open-in-kaggle.svg)](https://kaggle.com/kernels/welcome?src=https://github.com/mohamed-set/melanomascan/blob/main/training/train_melanoscan.ipynb)
 
-Ouvrir [`training/train_melanoscan.ipynb`](training/train_melanoscan.ipynb) sur Kaggle (bouton ci-dessus), ajouter les deux
-datasets ci-dessous, activer GPU + Internet, puis « Run All » (~1 h 30 sur un GPU T4).
+Ouvrir [`training/train_melanoscan.ipynb`](training/train_melanoscan.ipynb) sur Kaggle (bouton ci-dessus), ajouter un ou plusieurs
+datasets d'images de peau (voir le guide), activer GPU + Internet, puis « Run All » (~1 h 30 sur un GPU T4).
 Le script source est `training/train_melanoscan.py` ; `training/to_notebook.py` régénère le notebook.
 
 ## Structure
@@ -81,11 +81,10 @@ docs/                      guide utilisateur, prompts IA, script de la vidéo
 
 ## Sources et crédits
 
-- Données : [ISIC 2020 Challenge](https://challenge2020.isic-archive.com/) et ISIC 2019 (HAM10000, BCN20000, MSK),
-  via les versions redimensionnées de Chris Deotte sur Kaggle :
-  [`cdeotte/jpeg-melanoma-384x384`](https://www.kaggle.com/datasets/cdeotte/jpeg-melanoma-384x384) et
-  [`cdeotte/jpeg-isic2019-384x384`](https://www.kaggle.com/datasets/cdeotte/jpeg-isic2019-384x384).
-  Rotemberg V. et al., *A patient-centric dataset of images and metadata for identifying melanomas using clinical context*, Scientific Data, 2021.
+- Données : archive ISIC (International Skin Imaging Collaboration), via les datasets Kaggle utilisés pour
+  l'entraînement (à préciser selon ceux ajoutés au notebook), par exemple HAM10000
+  (Tschandl P. et al., *The HAM10000 dataset*, Scientific Data, 2018) et ISIC 2019 / 2020
+  (Rotemberg V. et al., Scientific Data, 2021).
 - Modèle : EfficientNetV2 (Tan & Le, 2021), poids `tf_efficientnetv2_s.in21k_ft_in1k` de
   [timm / Hugging Face](https://huggingface.co/timm/tf_efficientnetv2_s.in21k_ft_in1k).
 - Bibliothèques : PyTorch, torchvision, timm, scikit-learn, Gradio.

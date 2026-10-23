@@ -4,16 +4,23 @@
 # Ce notebook entraîne le modèle utilisé par l'application MelanoScan.
 # Il est fait pour tourner sur **Kaggle** (GPU T4 ou P100, Internet activé).
 #
-# **Données** (à ajouter au notebook via « Add Input ») :
-# - `cdeotte/jpeg-melanoma-384x384` : ISIC 2020, images redimensionnées en 384x384
-# - `cdeotte/jpeg-isic2019-384x384` : ISIC 2019, images redimensionnées en 384x384
+# **Données** : ajoutez **un ou plusieurs** datasets d'images de peau via « Add Input ».
+# Le notebook détecte tout seul leur format. Formats reconnus :
+# - un CSV avec une colonne d'identifiant d'image (`image_name`, `image_id`, `isic_id`…) et une
+#   colonne de label (`target`, `benign_malignant`, `dx`, `MEL`, `diagnosis`, `label`) ;
+#   exemples : HAM10000 (« Skin Cancer MNIST: HAM10000 »), ISIC 2019, ISIC 2020 / SIIM-ISIC ;
+# - des dossiers d'images nommés `benign` / `malignant` (ou `melanoma`, `nevus`…) ;
+#   exemples : « Melanoma Skin Cancer Dataset of 10000 Images », « Skin Cancer: Malignant vs. Benign ».
+#
+# Plus il y a d'images de mélanomes, meilleur sera le modèle : combinez plusieurs datasets si possible.
+# Les doublons (même identifiant ISIC) sont supprimés automatiquement.
 #
 # **Modèle** : EfficientNetV2-S pré-entraîné sur ImageNet-21k (bibliothèque `timm`),
 # fine-tuné entièrement en 384x384.
 #
 # **Choix pour limiter les faux positifs et les faux négatifs** :
-# 1. On combine ISIC 2019 et 2020 pour avoir environ 5 000 mélanomes au lieu de 584.
-# 2. Le découpage train/val/test se fait **par patient** pour éviter les fuites.
+# 1. On combine tous les datasets ajoutés pour avoir le plus de mélanomes possible.
+# 2. Le découpage train/val/test se fait **par patient ou par lésion** quand l'info existe, pour éviter les fuites.
 # 3. La perte BCE est pondérée pour compenser le déséquilibre des classes.
 # 4. Le seuil de décision est choisi sur la validation (indice de Youden), pas fixé à 0,5.
 # 5. On moyenne les prédictions sur 4 retournements de l'image (TTA).
@@ -55,9 +62,8 @@ CFG = {
     "lr": 2e-4,
     "weight_decay": 1e-2,
     "warmup_epochs": 1,
-    # ISIC 2020 contient ~32 000 images bénignes : on en garde une partie pour
-    # accélérer l'entraînement et réduire le déséquilibre.
-    "benign_keep_frac_2020": 0.5,
+    # Au-delà de ce ratio bénins/malins, on sous-échantillonne les bénins (vitesse + déséquilibre).
+    "max_benign_per_malignant": 8,
     "num_workers": os.cpu_count() or 2,
     "seed": 42,
     "target_sensitivity": 0.90,
@@ -85,45 +91,136 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Device :", DEVICE, "| GPUs :", torch.cuda.device_count())
 
 # %% [markdown]
-# ## Chargement des métadonnées
+# ## Détection et chargement des datasets
 #
-# On cherche les fichiers `train.csv` des deux datasets dans `/kaggle/input`,
-# quel que soit le chemin exact de montage.
+# Pour chaque dataset présent dans `/kaggle/input`, on cherche d'abord un CSV avec des labels.
+# À défaut, on lit le label dans le nom du dossier de chaque image.
 
 # %%
-def find_dataset(name):
-    hits = glob.glob(os.path.join(CFG["input_dir"], "**", name, "train.csv"), recursive=True)
-    if not hits:
-        raise FileNotFoundError(f"Dataset '{name}' introuvable : ajoutez-le via « Add Input ».")
-    return os.path.dirname(hits[0])
+IMAGE_EXT = (".jpg", ".jpeg", ".png", ".bmp")
+ID_COLS = ["image_name", "image_id", "isic_id", "image", "filename", "file", "id"]
+GROUP_COLS = ["patient_id", "lesion_id"]
+MALIGNANT_DIRS = {"malignant", "melanoma", "mel", "cancer"}
+BENIGN_DIRS = {"benign", "nevus", "nv", "non_melanoma", "not_melanoma", "normal"}
 
 
-def load_source(name, source):
-    root = find_dataset(name)
-    df = pd.read_csv(os.path.join(root, "train.csv"))
-    # tfrecord == -1 marque les doublons dans les datasets de Chris Deotte
-    if "tfrecord" in df.columns:
-        df = df[df["tfrecord"] != -1]
-    df["path"] = df["image_name"].map(lambda n: os.path.join(root, "train", f"{n}.jpg"))
-    df["source"] = source
-    df["patient_id"] = df["patient_id"].fillna(df["image_name"])
-    return df[["image_name", "patient_id", "target", "path", "source"]]
+def csv_labels(frame):
+    """Renvoie une série 0/1 (1 = mélanome/malin) ou None si le CSV n'a pas de label exploitable."""
+    cols = {c.lower(): c for c in frame.columns}
+    if "target" in cols:
+        return pd.to_numeric(frame[cols["target"]], errors="coerce")
+    if "mel" in cols and pd.api.types.is_numeric_dtype(frame[cols["mel"]]):
+        return (frame[cols["mel"]] > 0.5).astype(float)
+    if "dx" in cols:
+        return frame[cols["dx"]].astype(str).str.lower().eq("mel").astype(float)
+    if "benign_malignant" in cols:
+        return frame[cols["benign_malignant"]].astype(str).str.lower().map({"malignant": 1.0, "benign": 0.0})
+    if "diagnosis" in cols:
+        return frame[cols["diagnosis"]].astype(str).str.lower().str.contains("melanoma").astype(float)
+    if "label" in cols:
+        lab = frame[cols["label"]]
+        if pd.api.types.is_numeric_dtype(lab):
+            return lab.astype(float)
+        return lab.astype(str).str.lower().isin(MALIGNANT_DIRS).astype(float)
+    return None
 
 
-df2020 = load_source("jpeg-melanoma-384x384", "isic2020")
-df2019 = load_source("jpeg-isic2019-384x384", "isic2019")
+def load_dataset(root):
+    images = {}
+    for dirpath, _, files in os.walk(root):
+        for f in files:
+            if f.lower().endswith(IMAGE_EXT):
+                images.setdefault(os.path.splitext(f)[0], os.path.join(dirpath, f))
+    if not images:
+        return None
 
-benign2020 = df2020[df2020.target == 0].sample(frac=CFG["benign_keep_frac_2020"], random_state=CFG["seed"])
-df2020 = pd.concat([benign2020, df2020[df2020.target == 1]])
-df = pd.concat([df2020, df2019], ignore_index=True)
-df = df[df["path"].map(os.path.exists)].reset_index(drop=True)
+    parts = []
+    for csv_path in glob.glob(os.path.join(root, "**", "*.csv"), recursive=True):
+        try:
+            frame = pd.read_csv(csv_path)
+        except Exception:
+            continue
+        cols = {c.lower(): c for c in frame.columns}
+        id_col = next((cols[c] for c in ID_COLS if c in cols), None)
+        labels = csv_labels(frame)
+        if id_col is None or labels is None:
+            continue
+        if "tfrecord" in cols:  # doublons marqués -1 dans les datasets de Chris Deotte
+            keep = frame[cols["tfrecord"]] != -1
+            frame, labels = frame[keep], labels[keep]
+        stems = frame[id_col].astype(str).map(lambda s: os.path.splitext(os.path.basename(s))[0])
+        group_col = next((cols[c] for c in GROUP_COLS if c in cols), None)
+        part = pd.DataFrame({
+            "image_name": stems.values,
+            "target": labels.values,
+            "patient_id": frame[group_col].values if group_col else stems.values,
+        })
+        part["path"] = part["image_name"].map(images)
+        part = part.dropna(subset=["path", "target"])
+        if len(part):
+            parts.append(part)
+
+    if not parts:  # pas de CSV exploitable : label = nom du dossier parent
+        rows = []
+        for stem, path in images.items():
+            folders = {d.lower() for d in path.split(os.sep)[-3:-1]}
+            if folders & MALIGNANT_DIRS:
+                rows.append((stem, 1.0, stem, path))
+            elif folders & BENIGN_DIRS:
+                rows.append((stem, 0.0, stem, path))
+        if rows:
+            parts.append(pd.DataFrame(rows, columns=["image_name", "target", "patient_id", "path"]))
+
+    if not parts:
+        return None
+    df_root = pd.concat(parts, ignore_index=True)
+    df_root["source"] = os.path.basename(root.rstrip(os.sep))
+    df_root["patient_id"] = df_root["patient_id"].fillna(df_root["image_name"]).astype(str)
+    return df_root
+
+
+def dataset_roots(base):
+    """Un dossier par dataset, que Kaggle monte /kaggle/input/<nom>, /kaggle/input/datasets/<user>/<nom>
+    ou /kaggle/input/competitions/<nom>."""
+    roots = []
+    for entry in sorted(glob.glob(os.path.join(base, "*"))):
+        name = os.path.basename(entry)
+        if name == "datasets":
+            roots += sorted(glob.glob(os.path.join(entry, "*", "*")))
+        elif name == "competitions":
+            roots += sorted(glob.glob(os.path.join(entry, "*")))
+        else:
+            roots.append(entry)
+    return [r for r in roots if os.path.isdir(r)]
+
+
+frames = []
+for root in dataset_roots(CFG["input_dir"]):
+    found = load_dataset(root)
+    if found is None:
+        print(f"Ignoré (aucune image labellisée) : {root}")
+    else:
+        print(f"OK : {root} -> {len(found)} images, {int(found.target.sum())} mélanomes/malins")
+        frames.append(found)
+if not frames:
+    raise RuntimeError("Aucun dataset exploitable : ajoutez un dataset d'images de peau via « Add Input ».")
+
+df = pd.concat(frames, ignore_index=True)
+df["target"] = df["target"].astype(int)
+df = df.drop_duplicates(subset="image_name").reset_index(drop=True)
+
+# Limite le nombre d'images bénignes pour accélérer l'entraînement si le déséquilibre est extrême
+n_pos = int(df.target.sum())
+max_benign = CFG["max_benign_per_malignant"] * n_pos
+if (df.target == 0).sum() > max_benign:
+    df = pd.concat([df[df.target == 1],
+                    df[df.target == 0].sample(max_benign, random_state=CFG["seed"])]).reset_index(drop=True)
 
 if CFG["debug"]:
     df = pd.concat([df[df.target == t].head(200) for t in (0, 1)]).reset_index(drop=True)
 
-print(df.groupby(["source", "target"]).size().unstack())
+print(df.groupby(["source", "target"]).size().unstack(fill_value=0))
 print("Total :", len(df), "| part de mélanomes :", round(df.target.mean(), 3))
-
 # %% [markdown]
 # ## Découpage train / validation / test par patient
 #
@@ -172,7 +269,9 @@ class LesionDataset(Dataset):
         return len(self.paths)
 
     def __getitem__(self, i):
-        image = Image.open(self.paths[i]).convert("RGB")
+        image = Image.open(self.paths[i])
+        image.draft("RGB", (CFG["img_size"] * 2, CFG["img_size"] * 2))  # décodage JPEG rapide des grandes images
+        image = image.convert("RGB")
         return self.tf(image), self.targets[i]
 
 
