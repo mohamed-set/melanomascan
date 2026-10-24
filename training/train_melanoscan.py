@@ -46,7 +46,6 @@ import torch.nn as nn
 from PIL import Image
 from sklearn.metrics import (auc, balanced_accuracy_score, confusion_matrix,
                              roc_auc_score, roc_curve)
-from sklearn.model_selection import StratifiedGroupKFold
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
@@ -186,7 +185,12 @@ def load_dataset(root):
         return None
     df_root = pd.concat(parts, ignore_index=True)
     df_root["source"] = os.path.basename(root.rstrip(os.sep))
-    df_root["patient_id"] = df_root["patient_id"].fillna(df_root["image_name"]).astype(str)
+    pid = df_root["patient_id"].astype(str).str.strip()
+    # Identifiants factices (-1, vide…) ou partagés par des centaines d'images : on les remplace
+    # par l'identifiant de l'image, sinon tout le dataset tomberait dans un seul « patient ».
+    counts = pid.map(pid.value_counts())
+    invalid = pid.str.lower().isin(["", "nan", "none", "-1", "0", "unknown"]) | (counts > 300)
+    df_root["patient_id"] = df_root["source"] + ":" + pid.where(~invalid, df_root["image_name"])
     return df_root
 
 
@@ -241,14 +245,22 @@ print("Total :", len(df), "| part de mélanomes :", round(df.target.mean(), 3))
 # Toutes les images d'un même patient restent dans le même ensemble.
 
 # %%
-def group_split(frame, n_splits, seed):
-    sgkf = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=seed)
-    rest_idx, held_idx = next(sgkf.split(frame, frame.target, frame.patient_id))
-    return frame.iloc[rest_idx].reset_index(drop=True), frame.iloc[held_idx].reset_index(drop=True)
+def group_split(frame, held_frac, seed):
+    """Met de côté ~held_frac des images, par groupes entiers, en gardant la proportion de mélanomes :
+    les patients avec et sans mélanome sont tirés séparément."""
+    rng = np.random.default_rng(seed)
+    groups = frame.groupby("patient_id")["target"].agg(["size", "max"])
+    held = []
+    for _, part in groups.groupby("max"):
+        order = part.index.values[rng.permutation(len(part))]
+        cumulative = part.loc[order, "size"].cumsum().values
+        held += list(order[cumulative <= held_frac * part["size"].sum()])
+    is_held = frame["patient_id"].isin(set(held))
+    return frame[~is_held].reset_index(drop=True), frame[is_held].reset_index(drop=True)
 
 
-trainval_df, test_df = group_split(df, n_splits=7, seed=CFG["seed"])     # ~14 % test
-train_df, val_df = group_split(trainval_df, n_splits=6, seed=CFG["seed"])  # ~14 % val
+trainval_df, test_df = group_split(df, held_frac=0.15, seed=CFG["seed"])
+train_df, val_df = group_split(trainval_df, held_frac=0.15 / 0.85, seed=CFG["seed"] + 1)
 assert not set(train_df.patient_id) & set(test_df.patient_id)
 for name, part in [("train", train_df), ("val", val_df), ("test", test_df)]:
     print(f"{name:5s} : {len(part):6d} images, {part.target.mean():.3f} de mélanomes")
