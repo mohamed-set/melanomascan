@@ -39,7 +39,7 @@ AUC test : …  ·  Ancien modèle (EfficientNetB0 100x100) : 83 % d'accuracy, 7
 | | Projet de départ | MelanoScan |
 |---|---|---|
 | Données | ~6 000 images ISIC | un ou plusieurs datasets ISIC Kaggle (HAM10000, ISIC 2019, ISIC 2020…), détectés automatiquement |
-| Modèle | EfficientNetB0, 100x100 | EfficientNetV2-S (ImageNet-21k), 384x384 |
+| Modèle | EfficientNetB0, 100x100 | EfficientNet-B0 (ImageNet), 256x256 |
 | Découpage | aléatoire par image | par patient (pas de fuite) |
 | Déséquilibre | non traité | BCE pondérée |
 | Seuil | 0,5 fixe | optimisé sur la validation (2 seuils) |
@@ -75,7 +75,7 @@ Hugging Face Spaces.
 [![Open in Kaggle](https://kaggle.com/static/images/open-in-kaggle.svg)](https://kaggle.com/kernels/welcome?src=https://github.com/mohamed-set/melanomascan/blob/main/training/train_melanoscan.ipynb)
 
 Ouvrir [`training/train_melanoscan.ipynb`](training/train_melanoscan.ipynb) sur Kaggle (bouton ci-dessus), ajouter un ou plusieurs
-datasets d'images de peau (voir le guide), activer GPU + Internet, puis « Run All » (~1 h 30 sur un GPU T4).
+datasets d'images de peau (voir le guide), activer GPU + Internet, puis « Run All » (~15 min sur 2 GPU T4, arrêt automatique).
 Le script source est `training/train_melanoscan.py` ; `training/to_notebook.py` régénère le notebook.
 
 ## Structure
@@ -95,8 +95,8 @@ docs/                      guide utilisateur, prompts IA, script de la vidéo
   l'entraînement (à préciser selon ceux ajoutés au notebook), par exemple HAM10000
   (Tschandl P. et al., *The HAM10000 dataset*, Scientific Data, 2018) et ISIC 2019 / 2020
   (Rotemberg V. et al., Scientific Data, 2021).
-- Modèle : EfficientNetV2 (Tan & Le, 2021), poids `tf_efficientnetv2_s.in21k_ft_in1k` de
-  [timm / Hugging Face](https://huggingface.co/timm/tf_efficientnetv2_s.in21k_ft_in1k).
+- Modèle : EfficientNet (Tan & Le, 2019), poids `efficientnet_b0.ra_in1k` de
+  [timm / Hugging Face](https://huggingface.co/timm/efficientnet_b0.ra_in1k).
 - Bibliothèques : PyTorch, torchvision, timm, scikit-learn, Gradio.
 - Projet de départ : [alaaeddine-ahriz/skin_cancer_detection](https://github.com/alaaeddine-ahriz/skin_cancer_detection).
 - Grad-CAM : Selvaraju et al., 2017.

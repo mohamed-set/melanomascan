@@ -45,7 +45,7 @@ Sans poids, l'application démarre en **mode démo** : l'interface fonctionne ma
 
 1. Créez un Space sur https://huggingface.co/new-space (SDK : **Gradio**, matériel : CPU basic gratuit).
 2. Poussez le contenu du repo dans le Space (`git push` vers l'URL du Space), poids inclus.
-   Le fichier de poids fait ~40 Mo ; activez Git LFS si Hugging Face le demande (`git lfs track "*.pth"`).
+   Le fichier de poids fait ~8 Mo ; activez Git LFS si Hugging Face le demande (`git lfs track "*.pth"`).
 3. Le Space se construit seul à partir de `requirements.txt` et du bloc en tête du `README.md`.
 
 ## 4. Ré-entraîner le modèle sur Kaggle
@@ -60,7 +60,7 @@ Sans poids, l'application démarre en **mode démo** : l'interface fonctionne ma
    Un dataset marqué « Ignoré » n'a pas de label exploitable.
 3. **Settings** : Accelerator = GPU T4 x2 (ou P100), Internet = On (compte vérifié par téléphone requis).
 4. Pour un essai rapide, mettez `"debug": True` dans la cellule des paramètres, puis remettez `False`.
-5. **Save Version → Save & Run All**. Comptez environ 1 h 30.
+5. **Save Version → Save & Run All**. Comptez environ 20 min (entraînement limité à 15 min).
 6. Dans l'onglet **Output**, téléchargez `melanoscan_model.pth`, `model_config.json`, `metrics.json`,
    `test_results.png` et le dossier `examples/`.
 

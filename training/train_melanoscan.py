@@ -57,7 +57,7 @@ from torchvision import transforms
 CFG = {
     "model_name": "efficientnet_b0.ra_in1k",
     "img_size": 256,
-    "epochs": 8,
+    "epochs": 12,
     "batch_size": 64,
     "lr": 5e-4,
     "weight_decay": 1e-2,
@@ -65,7 +65,7 @@ CFG = {
     # Au-delà de ce ratio bénins/malins, on sous-échantillonne les bénins (vitesse + déséquilibre).
     "max_benign_per_malignant": 3,
     # Arrêt de sécurité : l'entraînement s'arrête avant de dépasser cette durée (minutes)
-    "time_budget_min": 15,
+    "time_budget_min": 15, "io_threads": 64,
     "num_workers": os.cpu_count() or 2,
     "seed": 42,
     "target_sensitivity": 0.90,
@@ -271,21 +271,52 @@ for name, part in [("train", train_df), ("val", val_df), ("test", test_df)]:
 # %% [markdown]
 # ## Pipeline d'images et augmentations
 #
-# Le CPU ne fait que le décodage, le recadrage et les retournements, et renvoie des images en uint8
-# (4 fois moins de mémoire qu'en float). Les augmentations de couleur, les rotations de 90° et la
-# normalisation sont faites sur le GPU, beaucoup plus rapide.
+# Sur Kaggle, les fichiers de « Input » sont lus à travers le réseau : lire les images une par une
+# pendant l'entraînement plafonne à ~15 images/s. On les charge donc **une seule fois**, en parallèle
+# (64 lectures simultanées), réduites en 256x256 et gardées en mémoire (uint8, ~4 Go pour 20 000 images).
+# Ensuite chaque époque ne prend que quelques dizaines de secondes.
+#
+# Le CPU ne fait que le recadrage et les retournements. Les augmentations de couleur, les rotations
+# de 90° et la normalisation sont faites sur le GPU, beaucoup plus rapide.
 
 # %%
+from concurrent.futures import ThreadPoolExecutor
+
+
+def read_image(path):
+    size = CFG["img_size"]
+    try:
+        image = Image.open(path)
+        image.draft("RGB", (size, size))  # décodage JPEG rapide des grandes images
+        image = image.convert("RGB").resize((size, size), Image.BILINEAR)
+    except Exception:
+        # Une image corrompue ne doit pas arrêter tout l'entraînement
+        image = Image.new("RGB", (size, size), (128, 128, 128))
+    return np.asarray(image, dtype=np.uint8)
+
+
+def load_images(frame, name):
+    start = time.time()
+    cache = np.empty((len(frame), CFG["img_size"], CFG["img_size"], 3), dtype=np.uint8)
+    with ThreadPoolExecutor(CFG["io_threads"]) as pool:
+        for i, array in enumerate(pool.map(read_image, frame["path"].tolist(), chunksize=16)):
+            cache[i] = array
+            if (i + 1) % 2000 == 0:
+                print(f"  {name} : {i + 1}/{len(frame)} images chargées ({(i + 1) / (time.time() - start):.0f} img/s)", flush=True)
+    print(f"{name} : {len(frame)} images en mémoire en {time.time() - start:.0f}s", flush=True)
+    return cache
+
+
+train_images = load_images(train_df, "train")
+val_images = load_images(val_df, "val")
+test_images = load_images(test_df, "test")
+
 train_tf = transforms.Compose([
-    transforms.RandomResizedCrop(CFG["img_size"], scale=(0.6, 1.0), ratio=(0.8, 1.25)),
+    transforms.RandomResizedCrop(CFG["img_size"], scale=(0.6, 1.0), ratio=(0.8, 1.25), antialias=True),
     transforms.RandomHorizontalFlip(),
     transforms.RandomVerticalFlip(),
-    transforms.PILToTensor(),
 ])
-eval_tf = transforms.Compose([
-    transforms.Resize((CFG["img_size"], CFG["img_size"])),
-    transforms.PILToTensor(),
-])
+eval_tf = None
 MEAN_T = torch.tensor(MEAN, device=DEVICE).view(1, 3, 1, 1)
 STD_T = torch.tensor(STD, device=DEVICE).view(1, 3, 1, 1)
 
@@ -305,34 +336,30 @@ def to_model_input(images, train=False):
 
 
 class LesionDataset(Dataset):
-    def __init__(self, frame, tf):
-        # Tableau numpy de chaînes fixes : évite la copie mémoire des objets Python dans chaque worker
-        self.paths = np.array(frame["path"].tolist(), dtype=np.str_)
+    def __init__(self, images, frame, tf):
+        self.images = images
         self.targets = frame["target"].values.astype(np.float32)
         self.tf = tf
 
     def __len__(self):
-        return len(self.paths)
+        return len(self.images)
 
     def __getitem__(self, i):
-        try:
-            image = Image.open(self.paths[i])
-            image.draft("RGB", (CFG["img_size"], CFG["img_size"]))  # décodage JPEG rapide des grandes images
-            image = image.convert("RGB")
-        except Exception:
-            # Une image corrompue ne doit pas arrêter tout l'entraînement
-            image = Image.new("RGB", (CFG["img_size"], CFG["img_size"]), (128, 128, 128))
-        return self.tf(image), self.targets[i]
+        image = torch.from_numpy(self.images[i]).permute(2, 0, 1)  # uint8 (3,H,W)
+        if self.tf is not None:
+            image = self.tf(image)
+        return image.contiguous(), self.targets[i]
 
 
-def make_loader(frame, tf, shuffle):
-    return DataLoader(LesionDataset(frame, tf), batch_size=CFG["batch_size"], shuffle=shuffle,
-                      num_workers=CFG["num_workers"], pin_memory=True, drop_last=shuffle)
+def make_loader(images, frame, tf, shuffle):
+    return DataLoader(LesionDataset(images, frame, tf), batch_size=CFG["batch_size"], shuffle=shuffle,
+                      num_workers=CFG["num_workers"], pin_memory=True, drop_last=shuffle,
+                      persistent_workers=CFG["num_workers"] > 0)
 
 
-train_loader = make_loader(train_df, train_tf, shuffle=True)
-val_loader = make_loader(val_df, eval_tf, shuffle=False)
-test_loader = make_loader(test_df, eval_tf, shuffle=False)
+train_loader = make_loader(train_images, train_df, train_tf, shuffle=True)
+val_loader = make_loader(val_images, val_df, eval_tf, shuffle=False)
+test_loader = make_loader(test_images, test_df, eval_tf, shuffle=False)
 
 # %% [markdown]
 # ## Modèle, perte et optimiseur
