@@ -89,6 +89,14 @@ def seed_everything(seed):
 seed_everything(CFG["seed"])
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Device :", DEVICE, "| GPUs :", torch.cuda.device_count())
+if DEVICE.type == "cuda":
+    major, minor = torch.cuda.get_device_capability(0)
+    print("GPU :", torch.cuda.get_device_name(0))
+    if f"sm_{major}{minor}" not in torch.cuda.get_arch_list():
+        raise RuntimeError("Ce GPU n'est pas pris en charge par la version de PyTorch de Kaggle. "
+                           "Settings → Accelerator → choisissez « GPU T4 x2 » puis relancez.")
+else:
+    print("ATTENTION : pas de GPU. Settings → Accelerator → « GPU T4 x2 », sinon l'entraînement prendra des jours.")
 
 # %% [markdown]
 # ## Détection et chargement des datasets
@@ -136,6 +144,9 @@ def load_dataset(root):
 
     parts = []
     for csv_path in glob.glob(os.path.join(root, "**", "*.csv"), recursive=True):
+        # sample_submission.csv et test.csv ont des labels factices ou absents
+        if any(k in os.path.basename(csv_path).lower() for k in ("submission", "test")):
+            continue
         try:
             frame = pd.read_csv(csv_path)
         except Exception:
@@ -206,6 +217,7 @@ if not frames:
     raise RuntimeError("Aucun dataset exploitable : ajoutez un dataset d'images de peau via « Add Input ».")
 
 df = pd.concat(frames, ignore_index=True)
+df = df[df["target"].isin([0, 1])]
 df["target"] = df["target"].astype(int)
 df = df.drop_duplicates(subset="image_name").reset_index(drop=True)
 
@@ -269,9 +281,13 @@ class LesionDataset(Dataset):
         return len(self.paths)
 
     def __getitem__(self, i):
-        image = Image.open(self.paths[i])
-        image.draft("RGB", (CFG["img_size"] * 2, CFG["img_size"] * 2))  # décodage JPEG rapide des grandes images
-        image = image.convert("RGB")
+        try:
+            image = Image.open(self.paths[i])
+            image.draft("RGB", (CFG["img_size"] * 2, CFG["img_size"] * 2))  # décodage JPEG rapide des grandes images
+            image = image.convert("RGB")
+        except Exception:
+            # Une image corrompue ne doit pas arrêter tout l'entraînement
+            image = Image.new("RGB", (CFG["img_size"], CFG["img_size"]))
         return self.tf(image), self.targets[i]
 
 
@@ -291,7 +307,11 @@ test_loader = make_loader(test_df, eval_tf, shuffle=False)
 # mélanomes sans sur-corriger (une correction complète ferait exploser les faux positifs).
 
 # %%
-model = timm.create_model(CFG["model_name"], pretrained=True, num_classes=1, drop_rate=0.3, drop_path_rate=0.2)
+try:
+    model = timm.create_model(CFG["model_name"], pretrained=True, num_classes=1, drop_rate=0.3, drop_path_rate=0.2)
+except Exception as e:
+    raise RuntimeError("Téléchargement des poids pré-entraînés impossible : activez Settings → Internet "
+                       "(compte Kaggle vérifié par téléphone requis).") from e
 model = model.to(DEVICE)
 if torch.cuda.device_count() > 1:
     model = nn.DataParallel(model)
@@ -389,7 +409,7 @@ test_probs, test_targets = predict(test_loader, tta=True)
 
 def report(threshold):
     pred = (test_probs >= threshold).astype(int)
-    tn, fp, fn, tp = confusion_matrix(test_targets, pred).ravel()
+    tn, fp, fn, tp = confusion_matrix(test_targets, pred, labels=[0, 1]).ravel()
     return {
         "threshold": round(threshold, 4),
         "accuracy": round((tp + tn) / len(pred), 4),
