@@ -38,8 +38,8 @@ AUC test : …  ·  Ancien modèle (EfficientNetB0 100x100) : 83 % d'accuracy, 7
 
 | | Projet de départ | MelanoScan |
 |---|---|---|
-| Données | ~6 000 images ISIC | un ou plusieurs datasets ISIC Kaggle (HAM10000, ISIC 2019, ISIC 2020…), détectés automatiquement |
-| Modèle | EfficientNetB0, 100x100 | EfficientNet-B0 (ImageNet), 256x256 |
+| Données | ~6 000 images ISIC | ISIC 2019 + ISIC 2020 en 256x256 (datasets Kaggle de Chris Deotte), détectés automatiquement |
+| Modèle | EfficientNetB0, 100x100 | ResNet-50 (ImageNet), 256x256 |
 | Découpage | aléatoire par image | par patient (pas de fuite) |
 | Déséquilibre | non traité | BCE pondérée |
 | Seuil | 0,5 fixe | optimisé sur la validation (2 seuils) |
@@ -95,8 +95,8 @@ docs/                      guide utilisateur, prompts IA, script de la vidéo
   l'entraînement (à préciser selon ceux ajoutés au notebook), par exemple HAM10000
   (Tschandl P. et al., *The HAM10000 dataset*, Scientific Data, 2018) et ISIC 2019 / 2020
   (Rotemberg V. et al., Scientific Data, 2021).
-- Modèle : EfficientNet (Tan & Le, 2019), poids `efficientnet_b0.ra_in1k` de
-  [timm / Hugging Face](https://huggingface.co/timm/efficientnet_b0.ra_in1k).
+- Modèle : ResNet (He et al., 2016), poids `resnet50.a1_in1k` (Wightman et al., 2021) de
+  [timm / Hugging Face](https://huggingface.co/timm/resnet50.a1_in1k).
 - Bibliothèques : PyTorch, torchvision, timm, scikit-learn, Gradio.
 - Projet de départ : [alaaeddine-ahriz/skin_cancer_detection](https://github.com/alaaeddine-ahriz/skin_cancer_detection).
 - Grad-CAM : Selvaraju et al., 2017.

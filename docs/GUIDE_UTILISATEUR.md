@@ -45,20 +45,20 @@ Sans poids, l'application démarre en **mode démo** : l'interface fonctionne ma
 
 1. Créez un Space sur https://huggingface.co/new-space (SDK : **Gradio**, matériel : CPU basic gratuit).
 2. Poussez le contenu du repo dans le Space (`git push` vers l'URL du Space), poids inclus.
-   Le fichier de poids fait ~8 Mo ; activez Git LFS si Hugging Face le demande (`git lfs track "*.pth"`).
+   Le fichier de poids fait ~50 Mo ; activez Git LFS si Hugging Face le demande (`git lfs track "*.pth"`).
 3. Le Space se construit seul à partir de `requirements.txt` et du bloc en tête du `README.md`.
 
 ## 4. Ré-entraîner le modèle sur Kaggle
 
 1. Sur Kaggle : **Create → New Notebook → File → Import Notebook**, choisissez `training/train_melanoscan.ipynb`.
-2. **Add Input** : cherchez et ajoutez un ou plusieurs datasets d'images de peau, par exemple :
-   - « Skin Cancer MNIST: HAM10000 » (10 015 images, ~1 100 mélanomes) ;
-   - « ISIC 2019 » (25 331 images, ~4 500 mélanomes) ;
-   - « Melanoma Skin Cancer Dataset of 10000 Images » (dossiers benign / malignant) ;
-   - la compétition « SIIM-ISIC Melanoma Classification » (onglet Competitions, accepter le règlement).
+2. **Add Input** (filtre **Datasets**) : ajoutez les deux datasets utilisés pour le modèle fourni :
+   - « JPEG Melanoma 256x256 » de Chris Deotte (ISIC 2020, 33 126 images, 584 mélanomes, 830 Mo) ;
+   - « JPEG ISIC 2019 256x256 » de Chris Deotte (25 331 images, ~4 500 mélanomes, 450 Mo).
+   D'autres datasets ISIC marchent aussi (HAM10000, « Melanoma Skin Cancer Dataset of 10000 Images »…),
+   mais préférez les versions 256x256 : les grandes images remplissent la mémoire de Kaggle et ralentissent tout.
    Le notebook détecte le format tout seul et affiche, pour chaque dataset, combien d'images il a reconnues.
    Un dataset marqué « Ignoré » n'a pas de label exploitable.
-3. **Settings** : Accelerator = GPU T4 x2 (ou P100), Internet = On (compte vérifié par téléphone requis).
+3. **Settings** : Accelerator = GPU T4 x2 (le P100 n'est plus pris en charge par PyTorch), Internet = On (compte vérifié par téléphone requis).
 4. Pour un essai rapide, mettez `"debug": True` dans la cellule des paramètres, puis remettez `False`.
 5. **Save Version → Save & Run All**. Comptez environ 20 min (entraînement limité à 15 min).
 6. Dans l'onglet **Output**, téléchargez `melanoscan_model.pth`, `model_config.json`, `metrics.json`,

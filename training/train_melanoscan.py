@@ -15,7 +15,9 @@
 # Plus il y a d'images de mélanomes, meilleur sera le modèle : combinez plusieurs datasets si possible.
 # Les doublons (même identifiant ISIC) sont supprimés automatiquement.
 #
-# **Modèle** : EfficientNet-B0 pré-entraîné sur ImageNet (bibliothèque `timm`), fine-tuné en 256x256.
+# **Modèle** : ResNet-50 pré-entraîné sur ImageNet (bibliothèque `timm`), fine-tuné en 256x256.
+# (EfficientNet est très lent sur les GPU T4 de Kaggle avec PyTorch 2.11 : ses convolutions « depthwise »
+# tournent à ~15 images/s, contre plusieurs centaines pour ResNet.)
 # **Durée** : environ 15 minutes sur GPU T4 x2 (arrêt automatique au bout de 15 min).
 #
 # **Choix pour limiter les faux positifs et les faux négatifs** :
@@ -55,7 +57,7 @@ from torchvision import transforms
 
 # %%
 CFG = {
-    "model_name": "efficientnet_b0.ra_in1k",
+    "model_name": "resnet50.a1_in1k",
     "img_size": 256,
     "epochs": 12,
     "batch_size": 64,
