@@ -15,11 +15,11 @@
 # Plus il y a d'images de mélanomes, meilleur sera le modèle : combinez plusieurs datasets si possible.
 # Les doublons (même identifiant ISIC) sont supprimés automatiquement.
 #
-# **Modèle** : EfficientNetV2-S pré-entraîné sur ImageNet-21k (bibliothèque `timm`),
-# fine-tuné entièrement en 384x384.
+# **Modèle** : EfficientNet-B0 pré-entraîné sur ImageNet (bibliothèque `timm`), fine-tuné en 256x256.
+# **Durée** : environ 15 minutes sur GPU T4 x2 (arrêt automatique au bout de 15 min).
 #
 # **Choix pour limiter les faux positifs et les faux négatifs** :
-# 1. On combine tous les datasets ajoutés pour avoir le plus de mélanomes possible.
+# 1. On combine tous les datasets ajoutés pour avoir le plus de mélanomes possible, avec au plus 3 bénins par mélanome.
 # 2. Le découpage train/val/test se fait **par patient ou par lésion** quand l'info existe, pour éviter les fuites.
 # 3. La perte BCE est pondérée pour compenser le déséquilibre des classes.
 # 4. Le seuil de décision est choisi sur la validation (indice de Youden), pas fixé à 0,5.
@@ -38,6 +38,7 @@ import shutil
 import time
 
 import matplotlib.pyplot as plt
+import psutil
 import numpy as np
 import pandas as pd
 import timm
@@ -54,15 +55,17 @@ from torchvision import transforms
 
 # %%
 CFG = {
-    "model_name": "tf_efficientnetv2_s.in21k_ft_in1k",
-    "img_size": 384,
-    "epochs": 10,
-    "batch_size": 32,
-    "lr": 2e-4,
+    "model_name": "efficientnet_b0.ra_in1k",
+    "img_size": 256,
+    "epochs": 8,
+    "batch_size": 64,
+    "lr": 5e-4,
     "weight_decay": 1e-2,
     "warmup_epochs": 1,
     # Au-delà de ce ratio bénins/malins, on sous-échantillonne les bénins (vitesse + déséquilibre).
-    "max_benign_per_malignant": 8,
+    "max_benign_per_malignant": 3,
+    # Arrêt de sécurité : l'entraînement s'arrête avant de dépasser cette durée (minutes)
+    "time_budget_min": 15,
     "num_workers": os.cpu_count() or 2,
     "seed": 42,
     "target_sensitivity": 0.90,
@@ -267,27 +270,44 @@ for name, part in [("train", train_df), ("val", val_df), ("test", test_df)]:
 
 # %% [markdown]
 # ## Pipeline d'images et augmentations
+#
+# Le CPU ne fait que le décodage, le recadrage et les retournements, et renvoie des images en uint8
+# (4 fois moins de mémoire qu'en float). Les augmentations de couleur, les rotations de 90° et la
+# normalisation sont faites sur le GPU, beaucoup plus rapide.
 
 # %%
 train_tf = transforms.Compose([
     transforms.RandomResizedCrop(CFG["img_size"], scale=(0.6, 1.0), ratio=(0.8, 1.25)),
     transforms.RandomHorizontalFlip(),
     transforms.RandomVerticalFlip(),
-    transforms.RandomRotation(90),
-    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.15, hue=0.03),
-    transforms.ToTensor(),
-    transforms.Normalize(MEAN, STD),
+    transforms.PILToTensor(),
 ])
 eval_tf = transforms.Compose([
     transforms.Resize((CFG["img_size"], CFG["img_size"])),
-    transforms.ToTensor(),
-    transforms.Normalize(MEAN, STD),
+    transforms.PILToTensor(),
 ])
+MEAN_T = torch.tensor(MEAN, device=DEVICE).view(1, 3, 1, 1)
+STD_T = torch.tensor(STD, device=DEVICE).view(1, 3, 1, 1)
+
+
+def to_model_input(images, train=False):
+    """uint8 (B,3,H,W) -> float normalisé sur le GPU, avec augmentations si train=True."""
+    x = images.to(DEVICE, non_blocking=True).float().div_(255)
+    if train:
+        rand = lambda: torch.rand(x.shape[0], 1, 1, 1, device=DEVICE)
+        x = x * (0.8 + 0.4 * rand())                                   # luminosité ±20 %
+        mean = x.mean(dim=(1, 2, 3), keepdim=True)
+        x = (x - mean) * (0.8 + 0.4 * rand()) + mean                   # contraste ±20 %
+        gray = x.mean(dim=1, keepdim=True)
+        x = (gray + (x - gray) * (0.85 + 0.3 * rand())).clamp_(0, 1)   # saturation ±15 %
+        x = torch.rot90(x, int(torch.randint(4, (1,))), dims=(2, 3))   # rotation 0/90/180/270°
+    return (x - MEAN_T) / STD_T
 
 
 class LesionDataset(Dataset):
     def __init__(self, frame, tf):
-        self.paths = frame["path"].values
+        # Tableau numpy de chaînes fixes : évite la copie mémoire des objets Python dans chaque worker
+        self.paths = np.array(frame["path"].tolist(), dtype=np.str_)
         self.targets = frame["target"].values.astype(np.float32)
         self.tf = tf
 
@@ -297,11 +317,11 @@ class LesionDataset(Dataset):
     def __getitem__(self, i):
         try:
             image = Image.open(self.paths[i])
-            image.draft("RGB", (CFG["img_size"] * 2, CFG["img_size"] * 2))  # décodage JPEG rapide des grandes images
+            image.draft("RGB", (CFG["img_size"], CFG["img_size"]))  # décodage JPEG rapide des grandes images
             image = image.convert("RGB")
         except Exception:
             # Une image corrompue ne doit pas arrêter tout l'entraînement
-            image = Image.new("RGB", (CFG["img_size"], CFG["img_size"]))
+            image = Image.new("RGB", (CFG["img_size"], CFG["img_size"]), (128, 128, 128))
         return self.tf(image), self.targets[i]
 
 
@@ -362,7 +382,7 @@ def predict(loader, tta=False):
     model.eval()
     probs, targets = [], []
     for images, y in loader:
-        images = images.to(DEVICE, non_blocking=True)
+        images = to_model_input(images)
         views = [images]
         if tta:
             views += [images.flip(3), images.flip(2), images.flip(2).flip(3)]
@@ -374,12 +394,13 @@ def predict(loader, tta=False):
 
 
 best_auc, history = 0.0, []
+train_start = time.time()
 best_path = os.path.join(CFG["output_dir"], "best_model.pth")
 for epoch in range(CFG["epochs"]):
     model.train()
     start, running = time.time(), 0.0
     for step, (images, y) in enumerate(train_loader):
-        images, y = images.to(DEVICE, non_blocking=True), y.to(DEVICE, non_blocking=True)
+        images, y = to_model_input(images, train=True), y.to(DEVICE, non_blocking=True)
         optimizer.zero_grad(set_to_none=True)
         with torch.autocast(device_type=DEVICE.type, dtype=torch.float16, enabled=use_amp):
             loss = criterion(model(images).squeeze(1), y)
@@ -388,14 +409,22 @@ for epoch in range(CFG["epochs"]):
         scaler.update()
         scheduler.step()
         running += loss.item()
+        if (step + 1) % 200 == 0:
+            ram = psutil.virtual_memory()
+            print(f"  étape {step + 1}/{len(train_loader)} | {(step + 1) * CFG['batch_size'] / (time.time() - start):.0f} img/s"
+                  f" | RAM {ram.used / 1e9:.1f}/{ram.total / 1e9:.1f} Go", flush=True)
     val_probs, val_targets = predict(val_loader)
     val_auc = roc_auc_score(val_targets, val_probs)
     history.append({"epoch": epoch + 1, "train_loss": running / len(train_loader), "val_auc": val_auc})
     print(f"Époque {epoch + 1}/{CFG['epochs']} | loss {running / len(train_loader):.4f} | "
-          f"val AUC {val_auc:.4f} | {time.time() - start:.0f}s")
+          f"val AUC {val_auc:.4f} | {time.time() - start:.0f}s", flush=True)
     if val_auc > best_auc:
         best_auc = val_auc
         torch.save((model.module if hasattr(model, "module") else model).state_dict(), best_path)
+    elapsed = time.time() - train_start
+    if elapsed + elapsed / (epoch + 1) > CFG["time_budget_min"] * 60:
+        print(f"Budget de {CFG['time_budget_min']} min atteint : arrêt après {epoch + 1} époques.", flush=True)
+        break
 
 (model.module if hasattr(model, "module") else model).load_state_dict(torch.load(best_path))
 print("Meilleure AUC de validation :", round(best_auc, 4))
