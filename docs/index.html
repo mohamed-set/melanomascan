@@ -106,7 +106,11 @@
 
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
 <script>
-const MODEL_DIR = "model/";
+// Sur GitHub Pages les fichiers sont à côté de la page ; ailleurs (Hugging Face, fichier local)
+// on les lit directement depuis le repo GitHub.
+const REPO_RAW = "https://raw.githubusercontent.com/mohamed-set/melanomascan/main/docs/";
+const BASE = location.hostname.endsWith("github.io") ? "" : REPO_RAW;
+const MODEL_DIR = BASE + "model/";
 const EXAMPLES = window.MELANOSCAN_EXAMPLES || [];
 let session, cfg, currentImage;
 const $ = (id) => document.getElementById(id);
@@ -125,10 +129,10 @@ async function init() {
     $("status").textContent = "Impossible de charger le modèle : " + e.message;
   }
   try {
-    const ex = await (await fetch("examples/examples.json")).json();
+    const ex = await (await fetch(BASE + "examples/examples.json")).json();
     for (const name of ex) {
       const img = document.createElement("img");
-      img.src = "examples/" + name; img.alt = name; img.title = name.replace(/_ISIC.*$/, "").replace("_", " ");
+      img.src = BASE + "examples/" + name; img.alt = name; img.title = name.replace(/_ISIC.*$/, "").replace("_", " ");
       img.onclick = () => loadImage(img.src);
       $("examples").appendChild(img);
     }
