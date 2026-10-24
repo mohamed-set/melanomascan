@@ -47,6 +47,16 @@ AUC test : …  ·  Ancien modèle (EfficientNetB0 100x100) : 83 % d'accuracy, 7
 | Explicabilité | aucune | carte Grad-CAM |
 | Interface | aucune | application Gradio |
 
+## Web app (sans installation)
+
+`docs/index.html` est une version 100 % navigateur : le modèle (exporté en ONNX) tourne dans la page
+grâce à onnxruntime-web, et la photo n'est envoyée à aucun serveur. Elle est servie par GitHub Pages
+depuis le dossier `docs/`. Pour régénérer le modèle web après un ré-entraînement :
+
+```bash
+python training/export_onnx.py weights/melanoscan_model.pth weights/model_config.json docs/model
+```
+
 ## Lancer l'application
 
 ```bash

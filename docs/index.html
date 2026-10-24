@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MelanoScan</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔬</text></svg>">
+<meta name="description" content="Estimation du risque de mélanome à partir d'une photo, directement dans le navigateur.">
+<style>
+  :root {
+    --bg: #f6f7fb; --card: #ffffff; --text: #1b1f2a; --muted: #5d6475; --border: #e2e5ee;
+    --accent: #4f46e5; --accent-text: #ffffff;
+    --low: #15803d; --mid: #b45309; --high: #b91c1c;
+    --low-bg: #dcfce7; --mid-bg: #fef3c7; --high-bg: #fee2e2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #10131a; --card: #191d27; --text: #e8eaf0; --muted: #9aa1b2; --border: #2a3040;
+      --accent: #818cf8; --accent-text: #10131a;
+      --low: #4ade80; --mid: #fbbf24; --high: #f87171;
+      --low-bg: #12301f; --mid-bg: #3a2c0c; --high-bg: #3d1515;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font-size: 2rem; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 24px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+  .drop { border: 2px dashed var(--border); border-radius: 12px; min-height: 260px; display: flex;
+          align-items: center; justify-content: center; text-align: center; cursor: pointer;
+          color: var(--muted); padding: 16px; position: relative; overflow: hidden; }
+  .drop.over { border-color: var(--accent); }
+  .drop img { max-width: 100%; max-height: 340px; border-radius: 8px; display: block; }
+  button { background: var(--accent); color: var(--accent-text); border: 0; border-radius: 10px;
+           padding: 12px 18px; font-size: 1rem; font-weight: 600; cursor: pointer; width: 100%; margin-top: 14px; }
+  button:disabled { opacity: .5; cursor: default; }
+  .examples { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .examples img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; cursor: pointer;
+                  border: 2px solid transparent; }
+  .examples img:hover { border-color: var(--accent); }
+  .risk { border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .risk h2 { margin: 0 0 4px; font-size: 1.4rem; }
+  .risk.low { background: var(--low-bg); color: var(--low); }
+  .risk.mid { background: var(--mid-bg); color: var(--mid); }
+  .risk.high { background: var(--high-bg); color: var(--high); }
+  .risk p { margin: 0; color: var(--text); }
+  .bar { height: 10px; background: var(--border); border-radius: 99px; overflow: hidden; margin: 8px 0 4px; }
+  .bar span { display: block; height: 100%; background: currentColor; }
+  canvas { max-width: 100%; border-radius: 8px; display: block; }
+  .muted { color: var(--muted); font-size: .9rem; }
+  .warn { margin-top: 20px; font-size: .92rem; color: var(--muted); }
+  details { margin-top: 16px; }
+  summary { cursor: pointer; font-weight: 600; }
+  #status { min-height: 1.5em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🔬 MelanoScan</h1>
+  <p class="lead">Déposez une photo dermoscopique d'un grain de beauté : l'IA estime le risque de mélanome
+    et montre les zones qui ont guidé sa décision. L'analyse se fait <strong>dans votre navigateur</strong>,
+    la photo n'est envoyée nulle part.</p>
+
+  <div class="grid">
+    <section class="card">
+      <label class="drop" id="drop">
+        <input type="file" id="file" accept="image/*" capture="environment" hidden>
+        <span id="dropText">Cliquez ou glissez une photo ici</span>
+      </label>
+      <button id="go" disabled>Analyser</button>
+      <div class="examples" id="examples"></div>
+      <p class="muted" id="status">Chargement du modèle…</p>
+    </section>
+
+    <section class="card" id="result" hidden>
+      <div class="risk" id="risk">
+        <h2 id="level"></h2>
+        <div class="bar"><span id="barFill"></span></div>
+        <p><strong id="score"></strong></p>
+        <p id="advice"></p>
+      </div>
+      <p class="muted" style="margin:0 0 6px">Zones qui ont le plus pesé dans le score (rouge = fort)</p>
+      <canvas id="cam"></canvas>
+    </section>
+  </div>
+
+  <p class="warn">⚠️ <strong>MelanoScan est un projet étudiant, pas un dispositif médical.</strong>
+    Le résultat ne remplace jamais l'avis d'un dermatologue. Au moindre doute (lésion qui change, saigne,
+    ou est asymétrique), consultez.</p>
+
+  <details>
+    <summary>Comment ça marche ?</summary>
+    <ul id="how">
+      <li>Modèle : EfficientNetV2-S fine-tuné sur ~46 000 images ISIC 2019, ISIC 2020 et HAM10000.</li>
+      <li>Chaque image est analysée 4 fois (retournements) et les scores sont moyennés.</li>
+      <li>Deux seuils choisis sur des données de validation : un seuil « dépistage » (90 % des mélanomes
+        au-dessus) et un seuil « équilibré » entre faux positifs et faux négatifs.</li>
+      <li>Code source : <a href="https://github.com/mohamed-set/melanomascan">github.com/mohamed-set/melanomascan</a></li>
+    </ul>
+  </details>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
+<script>
+const MODEL_DIR = "model/";
+const EXAMPLES = window.MELANOSCAN_EXAMPLES || [];
+let session, cfg, currentImage;
+const $ = (id) => document.getElementById(id);
+const fileInput = $("file");
+
+async function init() {
+  try {
+    ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
+    cfg = await (await fetch(MODEL_DIR + "model_config.json")).json();
+    $("status").textContent = "Téléchargement du modèle (~80 Mo, une seule fois)…";
+    session = await ort.InferenceSession.create(MODEL_DIR + "melanoscan.onnx", { executionProviders: ["wasm"] });
+    $("status").textContent = `Modèle prêt (AUC test : ${cfg.test_auc ?? "n/a"}).`;
+    if (currentImage) $("go").disabled = false;
+  } catch (e) {
+    console.error(e);
+    $("status").textContent = "Impossible de charger le modèle : " + e.message;
+  }
+  try {
+    const ex = await (await fetch("examples/examples.json")).json();
+    for (const name of ex) {
+      const img = document.createElement("img");
+      img.src = "examples/" + name; img.alt = name; img.title = name.replace(/_ISIC.*$/, "").replace("_", " ");
+      img.onclick = () => loadImage(img.src);
+      $("examples").appendChild(img);
+    }
+  } catch (_) { /* pas d'exemples */ }
+}
+
+function loadImage(src) {
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload = () => {
+    currentImage = img;
+    $("drop").replaceChildren(fileInput, img.cloneNode());
+    $("go").disabled = !session;
+  };
+  img.src = src;
+}
+
+fileInput.addEventListener("change", (e) => {
+  const f = e.target.files[0];
+  if (f) loadImage(URL.createObjectURL(f));
+});
+const drop = $("drop");
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => {
+  e.preventDefault(); drop.classList.remove("over");
+  const f = e.dataTransfer.files[0];
+  if (f) loadImage(URL.createObjectURL(f));
+});
+
+// Image -> tenseur NCHW normalisé, avec 4 vues (originale, miroir horizontal, vertical, les deux)
+function toTensor(img) {
+  const S = cfg.img_size;
+  const c = document.createElement("canvas"); c.width = S; c.height = S;
+  const ctx = c.getContext("2d");
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, 0, 0, S, S);
+  const px = ctx.getImageData(0, 0, S, S).data;
+  const data = new Float32Array(4 * 3 * S * S);
+  const plane = S * S;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const i = (y * S + x) * 4;
+    for (let ch = 0; ch < 3; ch++) {
+      const v = (px[i + ch] / 255 - cfg.mean[ch]) / cfg.std[ch];
+      const coords = [[y, x], [y, S - 1 - x], [S - 1 - y, x], [S - 1 - y, S - 1 - x]];
+      coords.forEach(([yy, xx], b) => { data[b * 3 * plane + ch * plane + yy * S + xx] = v; });
+    }
+  }
+  return new ort.Tensor("float32", data, [4, 3, S, S]);
+}
+
+function drawCam(img, cam, h, w) {
+  const canvas = $("cam");
+  const W = Math.min(img.naturalWidth, 640), H = Math.round(W * img.naturalHeight / img.naturalWidth);
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0, W, H);
+  let min = Infinity, max = -Infinity;
+  const v = Array.from(cam.slice(0, h * w), (x) => Math.max(x, 0));
+  v.forEach((x) => { min = Math.min(min, x); max = Math.max(max, x); });
+  const small = document.createElement("canvas"); small.width = w; small.height = h;
+  const sctx = small.getContext("2d"); const id = sctx.createImageData(w, h);
+  v.forEach((x, i) => {
+    const t = (x - min) / (max - min + 1e-8);
+    id.data[i * 4] = 255; id.data[i * 4 + 1] = Math.round(60 * (1 - t)); id.data[i * 4 + 2] = Math.round(255 * (1 - t));
+    id.data[i * 4 + 3] = Math.round(170 * t);
+  });
+  sctx.putImageData(id, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(small, 0, 0, W, H);
+}
+
+$("go").addEventListener("click", async () => {
+  if (!session || !currentImage) return;
+  $("go").disabled = true; $("status").textContent = "Analyse en cours…";
+  try {
+    const out = await session.run({ image: toTensor(currentImage) });
+    const probs = out.prob.data;
+    const p = (probs[0] + probs[1] + probs[2] + probs[3]) / 4;
+    const low = Math.min(cfg.threshold_screening, cfg.threshold_balanced);
+    const high = Math.max(cfg.threshold_screening, cfg.threshold_balanced);
+    const [cls, level, advice] = p >= high
+      ? ["high", "🔴 Risque élevé", "Prenez rendez-vous rapidement avec un dermatologue."]
+      : p >= low
+        ? ["mid", "🟠 À surveiller", "Faites contrôler cette lésion lors d'une consultation."]
+        : ["low", "🟢 Risque faible", "Continuez à surveiller la lésion (règle ABCDE)."];
+    $("risk").className = "risk " + cls;
+    $("level").textContent = level;
+    $("score").textContent = `Score de mélanome : ${Math.max(0, Math.round(p * 100))} %`;
+    $("barFill").style.width = (p * 100).toFixed(1) + "%";
+    $("advice").textContent = advice;
+    const [, h, w] = out.cam.dims;
+    drawCam(currentImage, out.cam.data, h, w);
+    $("result").hidden = false;
+    $("status").textContent = "Analyse terminée.";
+  } catch (e) {
+    console.error(e);
+    $("status").textContent = "Erreur pendant l'analyse : " + e.message;
+  }
+  $("go").disabled = false;
+});
+
+init();
+</script>
+</body>
+</html>
