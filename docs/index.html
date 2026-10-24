@@ -95,7 +95,7 @@
   <details>
     <summary>Comment ça marche ?</summary>
     <ul id="how">
-      <li>Modèle : EfficientNetV2-S fine-tuné sur ~46 000 images ISIC 2019, ISIC 2020 et HAM10000.</li>
+      <li>Modèle : ResNet-50 fine-tuné sur 20 360 images ISIC 2019 et ISIC 2020 (25 % de mélanomes), entraîné en 15 min sur Kaggle.</li>
       <li>Chaque image est analysée 4 fois (retournements) et les scores sont moyennés.</li>
       <li>Deux seuils choisis sur des données de validation : un seuil « dépistage » (90 % des mélanomes
         au-dessus) et un seuil « équilibré » entre faux positifs et faux négatifs.</li>
@@ -213,7 +213,7 @@ $("go").addEventListener("click", async () => {
     const probs = out.prob.data;
     const p = (probs[0] + probs[1] + probs[2] + probs[3]) / 4;
     const low = Math.min(cfg.threshold_screening, cfg.threshold_balanced);
-    const high = Math.max(cfg.threshold_screening, cfg.threshold_balanced);
+    const high = cfg.threshold_high ?? Math.max(cfg.threshold_screening, cfg.threshold_balanced);
     const [cls, level, advice] = p >= high
       ? ["high", "🔴 Risque élevé", "Prenez rendez-vous rapidement avec un dermatologue."]
       : p >= low

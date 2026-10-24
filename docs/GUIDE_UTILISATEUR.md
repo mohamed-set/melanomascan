@@ -2,7 +2,8 @@
 
 ## 1. Utiliser l'application
 
-1. Ouvrez l'application (lien Hugging Face Spaces, ou `http://127.0.0.1:7860` en local).
+1. Ouvrez l'application en ligne : https://huggingface.co/spaces/mohatest78/melanoscan
+   (ou `http://127.0.0.1:7860` en local avec `python app.py`).
 2. Déposez une photo de la lésion, prenez-la avec la webcam, ou cliquez sur un exemple.
    Les meilleurs résultats s'obtiennent avec une **image dermoscopique** centrée sur la lésion,
    comme celles des exemples. Une photo de smartphone classique donne un résultat moins fiable.
@@ -11,9 +12,9 @@
 
 | Niveau | Signification | Conseil affiché |
 |---|---|---|
-| 🟢 Risque faible | score sous le seuil de dépistage | continuer à surveiller (règle ABCDE) |
-| 🟠 À surveiller | score entre les deux seuils | faire contrôler lors d'une consultation |
-| 🔴 Risque élevé | score au-dessus du seuil équilibré | consulter rapidement un dermatologue |
+| 🟢 Risque faible | score sous 31 % (seuil de dépistage) | continuer à surveiller (règle ABCDE) |
+| 🟠 À surveiller | score entre 31 % et 50 % | faire contrôler lors d'une consultation |
+| 🔴 Risque élevé | score au-dessus de 50 % | consulter rapidement un dermatologue |
 
 5. La **carte Grad-CAM** colore en rouge les zones qui ont le plus pesé dans la décision. Si le rouge
    tombe hors de la lésion (poils, règle, bord noir), le résultat est moins fiable.
@@ -32,8 +33,7 @@ source .venv/bin/activate          # Windows : .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Placez les deux fichiers produits par l'entraînement dans `weights/` :
-`melanoscan_model.pth` et `model_config.json`. Copiez aussi les images de `examples/` si vous les avez.
+Le modèle entraîné est déjà fourni dans `weights/` : il n'y a rien à télécharger.
 
 ```bash
 python app.py

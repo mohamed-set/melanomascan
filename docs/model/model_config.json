@@ -1,0 +1,18 @@
+{
+  "model_name": "resnet50.a1_in1k",
+  "img_size": 256,
+  "mean": [
+    0.485,
+    0.456,
+    0.406
+  ],
+  "std": [
+    0.229,
+    0.224,
+    0.225
+  ],
+  "threshold_balanced": 0.3329065144062042,
+  "threshold_screening": 0.31017178297042847,
+  "test_auc": 0.9226,
+  "threshold_high": 0.5
+}

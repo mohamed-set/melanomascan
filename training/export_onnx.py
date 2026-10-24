@@ -54,5 +54,12 @@ torch.onnx.export(
     dynamic_axes={"image": {0: "batch"}, "prob": {0: "batch"}, "cam": {0: "batch"}},
     opset_version=17, dynamo=False,
 )
+# Poids en float16 : fichier deux fois plus léger pour le navigateur, entrées/sorties restent en float32
+try:
+    import onnx
+    from onnxconverter_common import float16
+    onnx.save(float16.convert_float_to_float16(onnx.load(onnx_path), keep_io_types=True), onnx_path)
+except ImportError:
+    print("onnxconverter-common absent : modèle laissé en float32 (pip install onnxconverter-common)")
 shutil.copy(config_path, os.path.join(out_dir, "model_config.json"))
 print(f"{onnx_path} : {os.path.getsize(onnx_path) / 1e6:.1f} Mo")

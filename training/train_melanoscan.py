@@ -569,7 +569,7 @@ plt.show()
 # ## Export pour l'application
 #
 # Fichiers produits dans `/kaggle/working` (onglet « Output ») :
-# - `melanoscan_model.pth` : poids du modèle en float16 (~40 Mo)
+# - `melanoscan_model.pth` : poids du modèle en float16 (~47 Mo)
 # - `model_config.json` : nom du modèle, taille d'image et seuils
 # - `metrics.json`, `test_results.png` : résultats pour le README et la vidéo
 # - `examples/` : quelques images du jeu de test pour la démo
@@ -577,7 +577,7 @@ plt.show()
 # %%
 out = CFG["output_dir"]
 state = (model.module if hasattr(model, "module") else model).state_dict()
-torch.save({k: v.half() for k, v in state.items()}, os.path.join(out, "melanoscan_model.pth"))
+torch.save({k: v.half().cpu() for k, v in state.items()}, os.path.join(out, "melanoscan_model.pth"))
 os.remove(best_path)
 
 config = {

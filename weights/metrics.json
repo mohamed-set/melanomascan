@@ -1,0 +1,100 @@
+{
+  "test_auc": 0.9226,
+  "n_test": 3053,
+  "n_test_melanoma": 746,
+  "balanced": {
+    "threshold": 0.3329,
+    "accuracy": 0.8274,
+    "balanced_accuracy": 0.8363,
+    "sensitivity": 0.8539,
+    "specificity": 0.8188,
+    "true_positives": 637,
+    "false_positives": 418,
+    "true_negatives": 1889,
+    "false_negatives": 109
+  },
+  "screening": {
+    "threshold": 0.3102,
+    "accuracy": 0.8185,
+    "balanced_accuracy": 0.8337,
+    "sensitivity": 0.8633,
+    "specificity": 0.8041,
+    "true_positives": 644,
+    "false_positives": 452,
+    "true_negatives": 1855,
+    "false_negatives": 102
+  },
+  "default_0.5": {
+    "threshold": 0.5,
+    "accuracy": 0.8687,
+    "balanced_accuracy": 0.8328,
+    "sensitivity": 0.7627,
+    "specificity": 0.9029,
+    "true_positives": 569,
+    "false_positives": 224,
+    "true_negatives": 2083,
+    "false_negatives": 177
+  },
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 0.6398569699880239,
+      "val_auc": 0.8885199918400652
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.4989185917216378,
+      "val_auc": 0.9112558932861871
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.46224691228823617,
+      "val_auc": 0.9026533954395032
+    },
+    {
+      "epoch": 4,
+      "train_loss": 0.448322849163601,
+      "val_auc": 0.9156976744186047
+    },
+    {
+      "epoch": 5,
+      "train_loss": 0.4389407781733049,
+      "val_auc": 0.9238748923341946
+    },
+    {
+      "epoch": 6,
+      "train_loss": 0.41456903530670713,
+      "val_auc": 0.923337979962827
+    },
+    {
+      "epoch": 7,
+      "train_loss": 0.4046639436939815,
+      "val_auc": 0.9249626002991975
+    },
+    {
+      "epoch": 8,
+      "train_loss": 0.38483544251134805,
+      "val_auc": 0.9350134865587743
+    },
+    {
+      "epoch": 9,
+      "train_loss": 0.3679686549816046,
+      "val_auc": 0.9348324380071626
+    },
+    {
+      "epoch": 10,
+      "train_loss": 0.364323715436029,
+      "val_auc": 0.9348117548392947
+    },
+    {
+      "epoch": 11,
+      "train_loss": 0.35197547581550237,
+      "val_auc": 0.9334647989482752
+    },
+    {
+      "epoch": 12,
+      "train_loss": 0.3501326349807215,
+      "val_auc": 0.9344907407407408
+    }
+  ]
+}

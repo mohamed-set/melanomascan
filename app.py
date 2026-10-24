@@ -8,7 +8,7 @@ from melanoscan.core import ROOT, MelanoScan
 
 scanner = MelanoScan()
 LOW = min(scanner.cfg["threshold_screening"], scanner.cfg["threshold_balanced"])
-HIGH = max(scanner.cfg["threshold_screening"], scanner.cfg["threshold_balanced"])
+HIGH = scanner.cfg.get("threshold_high", max(scanner.cfg["threshold_screening"], scanner.cfg["threshold_balanced"]))
 
 DISCLAIMER = (
     "⚠️ **MelanoScan est un projet étudiant, pas un dispositif médical.** "

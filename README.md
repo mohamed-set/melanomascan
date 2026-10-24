@@ -24,15 +24,22 @@ Un outil de pré-tri permet de prioriser les lésions suspectes et d'aider les m
 
 ## Résultats
 
-Modèle évalué sur un jeu de test de patients jamais vus pendant l'entraînement.
-_Tableau à remplir avec `metrics.json` après l'entraînement Kaggle._
+Modèle évalué sur 3 053 images de test (746 mélanomes) de patients jamais vus pendant l'entraînement.
+Entraînement : 12 époques en 15 min sur Kaggle (GPU T4).
+
+**AUC test : 0,923**
 
 | Seuil | Accuracy | Accuracy équilibrée | Sensibilité (mélanomes détectés) | Spécificité | Faux positifs | Faux négatifs |
 |---|---|---|---|---|---|---|
-| Équilibré (Youden) | | | | | | |
-| Dépistage (≥ 90 % sensibilité) | | | | | | |
+| Dépistage (0,31) | 81,9 % | 83,4 % | 86,3 % | 80,4 % | 452 | 102 |
+| Équilibré, Youden (0,33) | 82,7 % | 83,6 % | 85,4 % | 81,9 % | 418 | 109 |
+| Haute confiance (0,50) | 86,9 % | 83,3 % | 76,3 % | 90,3 % | 224 | 177 |
 
-AUC test : …  ·  Ancien modèle (EfficientNetB0 100x100) : 83 % d'accuracy, 74 % de sensibilité.
+L'application affiche 🟢 sous 0,31, 🟠 entre 0,31 et 0,50 et 🔴 au-dessus de 0,50.
+Ancien modèle (EfficientNetB0 100x100) : 83 % d'accuracy, 74 % de sensibilité. MelanoScan détecte donc
+plus de mélanomes (86 % contre 74 %) à accuracy égale, sur un jeu de test plus difficile et sans fuite entre patients.
+
+![Résultats sur le jeu de test](weights/test_results.png)
 
 ## Ce qui a changé par rapport au projet de départ
 
@@ -51,7 +58,7 @@ AUC test : …  ·  Ancien modèle (EfficientNetB0 100x100) : 83 % d'accuracy, 7
 
 `docs/index.html` est une version 100 % navigateur : le modèle (exporté en ONNX) tourne dans la page
 grâce à onnxruntime-web, et la photo n'est envoyée à aucun serveur. Elle est servie par GitHub Pages
-depuis le dossier `docs/`. Pour régénérer le modèle web après un ré-entraînement :
+depuis le dossier `docs/`, et en ligne sur https://huggingface.co/spaces/mohatest78/melanoscan. Pour régénérer le modèle web après un ré-entraînement :
 
 ```bash
 python training/export_onnx.py weights/melanoscan_model.pth weights/model_config.json docs/model
@@ -63,7 +70,6 @@ python training/export_onnx.py weights/melanoscan_model.pth weights/model_config
 git clone https://github.com/mohamed-set/melanomascan.git
 cd melanomascan
 pip install -r requirements.txt
-# placer melanoscan_model.pth et model_config.json dans weights/
 python app.py   # puis ouvrir http://127.0.0.1:7860
 ```
 
@@ -84,7 +90,7 @@ Le script source est `training/train_melanoscan.py` ; `training/to_notebook.py` 
 app.py                     interface Gradio
 melanoscan/core.py         chargement du modèle, prédiction, Grad-CAM
 training/                  notebook d'entraînement Kaggle
-weights/                   poids entraînés (à ajouter)
+weights/                   poids entraînés, métriques et courbes
 examples/                  images de démonstration (jeu de test)
 docs/                      guide utilisateur, prompts IA, script de la vidéo
 ```
