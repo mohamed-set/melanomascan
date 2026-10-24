@@ -332,7 +332,8 @@ def to_model_input(images, train=False):
         gray = x.mean(dim=1, keepdim=True)
         x = (gray + (x - gray) * (0.85 + 0.3 * rand())).clamp_(0, 1)   # saturation ±15 %
         x = torch.rot90(x, int(torch.randint(4, (1,))), dims=(2, 3))   # rotation 0/90/180/270°
-    return (x - MEAN_T) / STD_T
+    x = (x - MEAN_T) / STD_T
+    return x.contiguous(memory_format=torch.channels_last if CHANNELS_LAST else torch.contiguous_format)
 
 
 class LesionDataset(Dataset):
@@ -374,7 +375,46 @@ except Exception as e:
     raise RuntimeError("Téléchargement des poids pré-entraînés impossible : activez Settings → Internet "
                        "(compte Kaggle vérifié par téléphone requis).") from e
 model = model.to(DEVICE)
-if torch.cuda.device_count() > 1:
+torch.backends.cudnn.benchmark = True
+
+
+def benchmark(net, channels_last, amp, steps=8):
+    """Images/s d'une étape d'entraînement (avant + arrière) sur des données aléatoires."""
+    x = torch.randn(CFG["batch_size"], 3, CFG["img_size"], CFG["img_size"], device=DEVICE)
+    if channels_last:
+        x = x.contiguous(memory_format=torch.channels_last)
+    opt = torch.optim.SGD(net.parameters(), lr=0.0)
+    for i in range(steps + 2):
+        if i == 2:
+            torch.cuda.synchronize()
+            t = time.time()
+        with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=amp):
+            net(x).float().mean().backward()
+        opt.step()
+        opt.zero_grad(set_to_none=True)
+    torch.cuda.synchronize()
+    return steps * CFG["batch_size"] / (time.time() - t)
+
+
+# Choix automatique de la configuration la plus rapide sur ce GPU (quelques secondes)
+CHANNELS_LAST, use_amp, use_dp = False, DEVICE.type == "cuda", False
+if DEVICE.type == "cuda":
+    results, initial_state = {}, {k: v.clone() for k, v in model.state_dict().items()}
+    for cl in (False, True):
+        model = model.to(memory_format=torch.channels_last if cl else torch.contiguous_format)
+        for amp in (True, False):
+            results[(cl, amp, False)] = benchmark(model, cl, amp)
+    CHANNELS_LAST, use_amp, _ = max(results, key=results.get)
+    model = model.to(memory_format=torch.channels_last if CHANNELS_LAST else torch.contiguous_format)
+    if torch.cuda.device_count() > 1:
+        dp = nn.DataParallel(model)
+        results[(CHANNELS_LAST, use_amp, True)] = benchmark(dp, CHANNELS_LAST, use_amp)
+        use_dp = results[(CHANNELS_LAST, use_amp, True)] > results[(CHANNELS_LAST, use_amp, False)]
+    model.load_state_dict(initial_state)  # le test a modifié les statistiques BatchNorm
+    for (cl, amp, dp_), speed in results.items():
+        print(f"  channels_last={cl!s:5} fp16={amp!s:5} 2 GPU={dp_!s:5} : {speed:5.0f} img/s")
+    print(f"Choisi : channels_last={CHANNELS_LAST}, fp16={use_amp}, 2 GPU={use_dp}", flush=True)
+if use_dp:
     model = nn.DataParallel(model)
 
 n_pos = train_df.target.sum()
@@ -394,7 +434,6 @@ def lr_lambda(step):
 
 
 scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-use_amp = DEVICE.type == "cuda"
 scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 print(f"pos_weight = {pos_weight:.2f}")
 
@@ -436,7 +475,7 @@ for epoch in range(CFG["epochs"]):
         scaler.update()
         scheduler.step()
         running += loss.item()
-        if (step + 1) % 200 == 0:
+        if (step + 1) in (20, 100) or (step + 1) % 200 == 0:
             ram = psutil.virtual_memory()
             print(f"  étape {step + 1}/{len(train_loader)} | {(step + 1) * CFG['batch_size'] / (time.time() - start):.0f} img/s"
                   f" | RAM {ram.used / 1e9:.1f}/{ram.total / 1e9:.1f} Go", flush=True)
