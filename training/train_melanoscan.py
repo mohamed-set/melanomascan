@@ -196,7 +196,7 @@ def dataset_roots(base):
     roots = []
     for entry in sorted(glob.glob(os.path.join(base, "*"))):
         name = os.path.basename(entry)
-        if name == "datasets":
+        if name in ("datasets", "notebooks", "models"):
             roots += sorted(glob.glob(os.path.join(entry, "*", "*")))
         elif name == "competitions":
             roots += sorted(glob.glob(os.path.join(entry, "*")))
@@ -214,7 +214,9 @@ for root in dataset_roots(CFG["input_dir"]):
         print(f"OK : {root} -> {len(found)} images, {int(found.target.sum())} mélanomes/malins")
         frames.append(found)
 if not frames:
-    raise RuntimeError("Aucun dataset exploitable : ajoutez un dataset d'images de peau via « Add Input ».")
+    raise RuntimeError(
+        "Aucun dataset d'images exploitable dans /kaggle/input. Dans « Add Input », cliquez sur le filtre "
+        "« Datasets » (pas « Notebooks ») et ajoutez par exemple « Skin Cancer MNIST: HAM10000 » ou « ISIC 2019 ».")
 
 df = pd.concat(frames, ignore_index=True)
 df = df[df["target"].isin([0, 1])]
